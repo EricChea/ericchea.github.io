@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Tutorial: Using Django Channels to visualize RSS Feeds with React</title>
+  <meta name="description" content="">
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="/sec/django/django-channels/react/advanced/2017/10/07/SEC-Django-Channels-React.html">
+  <link rel="alternate" type="application/rss+xml" title="My blog" href="/feed.xml">
+  
+  
+</head>
+
+
+  <body>
+
+    <header class="site-header" role="banner">
+
+  <div class="wrapper">
+    
+    
+    <a class="site-title" href="/">My blog</a>
+  
+    
+      <nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path fill="#424242" d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.031C17.335,0,18,0.665,18,1.484L18,1.484z"/>
+              <path fill="#424242" d="M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0c0-0.82,0.665-1.484,1.484-1.484 h15.031C17.335,6.031,18,6.696,18,7.516L18,7.516z"/>
+              <path fill="#424242" d="M18,13.516C18,14.335,17.335,15,16.516,15H1.484C0.665,15,0,14.335,0,13.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.031C17.335,12.031,18,12.696,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger">
+          
+            
+            
+          
+            
+            
+            <a class="page-link" href="/about/">About</a>
+            
+          
+            
+            
+          
+            
+            
+          
+            
+            
+          
+        </div>
+      </nav>
+    
+  </div>
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title" itemprop="name headline">Tutorial: Using Django Channels to visualize RSS Feeds with React</h1>
+    <p class="post-meta">
+      <time datetime="2017-10-07T14:57:48-04:00" itemprop="datePublished">
+        
+        Oct 7, 2017
+      </time>
+      </p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    
+<p>Number of words: 
+    3144</p>
+
+<p>17 minutes to read</p>
+
+<h2 id="introduction">Introduction</h2>
+
+<p>This post is for those who are interested in using Django Channels and want an example to template off of.  Django Channels will be used in this application as a way to push data to the frontend from an RSS feed only when there is new data avaialble as opposed to having the frontend application poll the RSS feed for new content. To get the most out of this application you’ll need some basic understanding of the following:</p>
+
+<ul>
+  <li><strong>Django</strong>: Having an understanding of how to build an API using Django views.</li>
+  <li><strong>React</strong>: Having an understanding of how to build and serve up a static page using React.</li>
+  <li><strong>WebSockets</strong>: The advantages of using WebSockets over polling a server for changes.</li>
+  <li><strong>ETL</strong>: Some basic principles in extracting xml data.  In this post we’ll be using the python xml package.</li>
+</ul>
+
+<h1 id="background">Background</h1>
+<p>Django is used by many large organizations/applications including NASA, YouTube, Mozilla, and Pinterest.  As a web framework it is very attractive because of the size of the vibrant community, it is written in python (clean code), it is secure, it has a built-in backend admin interface that can be quickly built, and it is very intuitive.  It has changed since it launched over ten years ago, one quite notable change being its ability to talk to multiple databases, a capability that was not available early on.  Building a REST API is as simple as creating a view and updating a path for the URL.  However, Django did fall behind – for instance it’s incompatibilities with newer technologies such as WebSockets.  WebSockets enabled the ability for a server to actively push data to the client instead of requiring the client to poll the server for changes, dramatically freeing up bandwidth.  It is this technology that has enabled the smooth communication in chat rooms and instant messages through these persistent long-lived connections.</p>
+
+<p><a href="http://www.celeryproject.org/">Celery</a> is an asynchronous task queue/job queue on distributed message passing.  It leverages the brokering capabilities of the likes of RabbitMQ and Redis and python scripts that can be easily decorated with functions from the Celery package to submit jobs.  Like Redis and Rabbit there can be multiple workers listening to the queue for new jobs to consume.</p>
+
+<p>Collectively, integration of WebSockets with some flavoring of Celery (no pun intended) became available with Andrew Goodkind’s spearheading of the <a href="https://channels.readthedocs.io/en/stable/">Django Channels</a> package.  Jacob Kaplan-Moss has a great post on creating a <a href="https://blog.heroku.com/in_deep_with_django_channels_the_future_of_real_time_apps_in_django">chat room with Django channels</a>.</p>
+
+<h1 id="architecture">Architecture</h1>
+<p>In this post I wanted to create something a little different, and that is to adapt Django Channels to read from an RSS feed for live data, essentially giving the RSS feed a seat in a chat room and the ability to notify everyone listening when new data is available.  Unfortunately, in order to know when an  RSS feed broadcasts new data we’ll need to poll the RSS feed for new data every few seconds.  When there are new filings the data will get parsed, stored in a database, and broadcasted to clients listening on the WebSocket.  In turn the React application will receive the fresh data whenever a new message is posted to the WebSocket.</p>
+
+<script src="https://unpkg.com/mermaid@7.1.0/dist/mermaid.min.js"></script>
+<div class="mermaid">
+sequenceDiagram
+    loop Every 5 seconds
+        parser-&gt;&gt;rss: Any new filings?
+    end
+	alt no
+		rss-&gt;&gt;parser: Don't do anything.
+	else yes
+		rss-&gt;&gt;parser: Retrieve the data and Inform the channel.
+	end
+
+    parser-&gt;&gt;api: Here's the cleaned up data.
+    api-&gt;&gt;database: Store the data.
+	api-&gt;&gt;channel: Publish the newest data for the group to consume.
+	channel-&gt;&gt;react: All listeners, refresh your latest filings.
+</div>
+
+<h2 id="tutorial">Tutorial</h2>
+
+<h3 id="environment-setup">Environment Setup</h3>
+<h4 id="virtual-machine">Virtual Machine</h4>
+<p>I’ll be using a virtual machine that I created in Digital Ocean running Ubuntu 16.04.3 x64.</p>
+
+<p><a href="https://conda.io/miniconda.html">Install mini-conda</a>: If you have Anaconda already installed just skip this.  MiniConda is a lightweight version of Anaconda.</p>
+<div class="highlighter-rouge"><pre class="highlight"><code>wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh &amp;&amp; bash Miniconda3-latest-Linux-x86_64.sh &amp;&amp; rm Miniconda3-latest-Linux-x86_64.sh
+</code></pre>
+</div>
+
+<p>clone the repository</p>
+<div class="highlighter-rouge"><pre class="highlight"><code>git clone TODO
+</code></pre>
+</div>
+
+<p>Install dependencies for compilers</p>
+<div class="highlighter-rouge"><pre class="highlight"><code>apt install libmysqlclient-dev make
+</code></pre>
+</div>
+
+<p>TODO: Check if the actual install is necessary or if we can get away with</p>
+<div class="highlighter-rouge"><pre class="highlight"><code>apt install libmysqlclient-dev
+</code></pre>
+</div>
+
+<p><a href="https://www.digitalocean.com/community/tutorials/how-to-install-mysql-on-ubuntu-16-04">Install MySQL</a></p>
+
+<h4 id="python-environment">Python Environment</h4>
+<p>Lets start by creating our python environments:</p>
+<ol>
+  <li>sec_api: manages the environment for the Django application.</li>
+  <li>sec_data: manages the environment for the package to retrieve data.</li>
+</ol>
+
+<p><a href="https://virtualenv.pypa.io/en/stable/">Virtualenv</a> can be used, but I’ve recently opted to use <a href="https://conda.io/docs/">Conda</a> <strong>not</strong> because I find huge advantages in using Conda over Virtualenv but rather the reason is a bit indirect. I want to have a python distribution that is consistent between both Windows OS and Linux based OSs and Anaconda offers this.  Since I’m using Anaconda it just makes sense to use the environment manager that comes with it.  Create python environments:</p>
+
+<figure class="highlight"><pre><code class="language-shell_session" data-lang="shell_session">&gt; conda create -n sec_api
+&gt; conda create -n sec_data
+
+Activating the environments differ slightly between Linux and Windows OSs. I'll
+be using the commands for Linux moving forward but if you're on a Windows system
+please make adjustments where necessary.
+
+Activate environment on Linux OS
+&gt; source activate [environment]
+
+Activate environment on Windows OS
+<span class="err">&gt; activate [environment]</span></code></pre></figure>
+
+<h4 id="install-dependencies">Install dependencies</h4>
+<p>You can copy and paste the dependencies into a requirements file or simply download them from <a href="https://github.com">Github</a>.</p>
+
+<p>Install the Django API dependencies from <a href="https://github.com">sec_api/requirements.txt</a></p>
+
+<figure class="highlight"><pre><code class="language-shell_session" data-lang="shell_session">&gt; conda activate sec_api
+<span class="err">(sec_api)&gt; pip install -r requirement.txt</span></code></pre></figure>
+
+<p>Install the data retrievel dependencies <a href="https://github.com">sec_data/requirements.txt</a></p>
+
+<figure class="highlight"><pre><code class="language-shell_session" data-lang="shell_session">&gt; conda activate sec_data
+<span class="err">(sec_data)&gt; pip install -r requirement.txt</span></code></pre></figure>
+
+<h3 id="polling-for-data">Polling for data</h3>
+
+<p>The polling and kickoff of an etl process is handled by <strong>feeds.sec.Filing</strong>.  Here is a code snippet that is responsible for polling the SEC RSS feed.  A Filing instance is instantiated and the feed is constantly refreshed until there is new data – assessed by <code class="highlighter-rouge">__is_process()</code>.</p>
+
+<p><a href="https://github.com">sec_data.feeds.sec</a></p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="o">...</span>
+    <span class="n">edgarfeedparser</span> <span class="o">=</span> <span class="n">Filing</span><span class="p">(</span><span class="n">url_param_string</span><span class="p">)</span> 
+    <span class="n">thread</span> <span class="o">=</span> <span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">edgarfeedparser</span><span class="o">.</span><span class="n">run</span><span class="p">)</span>                                 
+    <span class="n">thread</span><span class="o">.</span><span class="n">daemon</span> <span class="o">=</span> <span class="bp">True</span>                                                        
+    <span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>                                                              
+    <span class="n">sleep</span><span class="p">(</span><span class="mi">86400</span><span class="p">)</span>   
+
+<span class="k">class</span> <span class="nc">Filing</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>                                                           
+    <span class="o">...</span> 
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rss_url</span><span class="p">):</span>                                                
+                                                                      
+        <span class="c"># Used for easy reference during a refresh of the rss contents.         </span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rss_url</span> <span class="o">=</span> <span class="n">rss_url</span>                                                  
+        <span class="bp">self</span><span class="o">.</span><span class="n">feed</span> <span class="o">=</span> <span class="n">feedparser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">url_file_stream_or_string</span><span class="o">=</span><span class="n">rss_url</span><span class="p">)</span>         
+        <span class="n">verify_feed_status</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">feed</span><span class="p">)</span>                                           
+                                                                           
+        <span class="bp">self</span><span class="o">.</span><span class="n">accession_bank</span> <span class="o">=</span> <span class="n">get_accession_nums</span><span class="p">()</span>                              
+
+
+    <span class="k">def</span> <span class="nf">__is_process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">form_type</span><span class="p">,</span> <span class="n">accession_num</span><span class="p">):</span>                           
+        <span class="c"># The rss feed gives at least two records per form 4 -- one for the     </span>
+        <span class="c"># issuer and one that is reporting (receiver) the transaction.          </span>
+        <span class="c"># The function removes duplicates by the accession number.              </span>
+        <span class="c"># Store entry data in a dictionary for better malleability              </span>
+        <span class="c"># We are not supporting other filing types except insiders for now      </span>
+        <span class="c"># If the accession number is already stored there is no need to         </span>
+        <span class="c"># run a job to load it again.                                           </span>
+        <span class="k">if</span> <span class="n">form_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">SUPPORTED_FORMS</span> <span class="ow">or</span> <span class="n">accession_num</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">accession_bank</span>  <span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>                                                        
+        <span class="k">else</span><span class="p">:</span>                                                                   
+            <span class="k">return</span> <span class="bp">True</span>                                                          
+
+
+    <span class="k">def</span> <span class="nf">__run_etl_jobs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>                                                   
+        <span class="s">"""One trick pony. Loads data into the designated data store.           
+                                                                              
+        If the summary data (entry) is an SEC filing and has not been noted in  
+        our datastore then create an ETL job to handle the persistence.         
+                                                                              
+        Note: Since the backend databases are only called at the beginning of   
+        the process if more than one process is spun up, neither process will   
+        be aware of which accession numbers have been newly recorded.  This will
+        most certainly lead to duplication of data.                             
+                                                                              
+        """</span>                                                                     
+                                                                      
+        <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">feed</span><span class="o">.</span><span class="n">entries</span><span class="p">:</span>                                         
+            <span class="n">entry_map</span> <span class="o">=</span> <span class="n">create_entry</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>                                     
+            <span class="n">form_type</span> <span class="o">=</span> <span class="n">entry_map</span><span class="p">[</span><span class="s">'form_type'</span><span class="p">]</span>                                  
+            <span class="n">accession_num</span> <span class="o">=</span> <span class="n">entry_map</span><span class="p">[</span><span class="s">'accession_num'</span><span class="p">]</span>                          
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">__is_process</span><span class="p">(</span><span class="n">form_type</span><span class="p">,</span> <span class="n">accession_num</span><span class="p">):</span>                     
+                <span class="n">etl</span> <span class="o">=</span> <span class="n">ETL</span><span class="p">(</span><span class="n">entry_map</span><span class="p">)</span>                                            
+                <span class="n">etl</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>                                                       
+                <span class="bp">self</span><span class="o">.</span><span class="n">accession_bank</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">accession_num</span><span class="p">)</span> 
+																		  
+																		  
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>                                                              
+      <span class="s">""" Starts pinging the feed for data                                    
+      """</span>                                                                     
+                                                                              
+      <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>                                                             
+          <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>                                                      
+          <span class="bp">self</span><span class="o">.</span><span class="n">__run_etl_jobs</span><span class="p">()</span></code></pre></figure>
+
+<h1 id="new-message">New message</h1>
+<p>When there is new data an ETL job is kicked off and handled by <a href="https://github.com">sec_data.etl.insiders.ETL</a>.  The ETL process is pretty standard:</p>
+<ol>
+  <li>Extract and transform the data with an <a href="https://github.com">XML Parser</a>.</li>
+  <li>Load the data into the database through a Django view.</li>
+</ol>
+
+<p>The ETL worker also publishes a message to the WebSocket when there is new data..
+<a href="https://github.com">sec_api.sec_filings.views</a></p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="k">def</span> <span class="nf">new_feed</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+    <span class="s">"""Signals that new data is in the feed."""</span>
+
+    <span class="n">asgi</span><span class="o">.</span><span class="n">channel_layer</span><span class="o">.</span><span class="n">send</span><span class="p">(</span>                                                     
+        <span class="n">channel</span><span class="o">=</span><span class="s">'websocket.new_message'</span><span class="p">,</span>  
+        <span class="n">message</span><span class="o">=</span><span class="p">{</span>
+            <span class="s">'reply_channel'</span><span class="p">:</span> <span class="s">'websocket.new_message'</span><span class="p">,</span>
+            <span class="s">'text'</span><span class="p">:</span> <span class="s">'New Message'</span><span class="p">,</span>
+            <span class="s">'path'</span><span class="p">:</span> <span class="s">'/feed/'</span>
+        <span class="p">}</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">HttpResponse</span><span class="p">(</span>
+        <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">([</span><span class="s">'Message Received'</span><span class="p">],</span> <span class="n">cls</span><span class="o">=</span><span class="n">DjangoJSONEncoder</span><span class="p">),</span>
+        <span class="n">content_type</span><span class="o">=</span><span class="s">'application/json'</span><span class="p">,</span>
+        <span class="n">status</span><span class="o">=</span><span class="mi">200</span>
+    <span class="p">)</span>           </code></pre></figure>
+
+<h3 id="data-models">Data Models</h3>
+<p>The data that we’ll be feeding in are filings from SEC insiders.  This can be simply thought of as a transaction, where the company(issuer) provides the product to the insider(owner).  Insider filings (forms 3,4, or 5) designate the type of security as either a:</p>
+<ol>
+  <li>derivative (a finanical instrument derived from an underlying asset) or</li>
+  <li>nonderivative (typically shares in a company).</li>
+</ol>
+
+<p>Here’s a snippet of the model structure from <a href="https://github.com">sec_api/sec_filings/models.py</a>.</p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="k">class</span> <span class="nc">Company</span><span class="p">(</span><span class="n">Entity</span><span class="p">):</span>                                                          
+    <span class="n">stateincorp</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>                            
+    <span class="n">irsnum</span> <span class="o">=</span> <span class="n">IntegerField</span><span class="p">(</span><span class="n">null</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>                                            
+    <span class="n">classification</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>                       
+    <span class="n">fiscal_yearend</span> <span class="o">=</span> <span class="n">IntegerField</span><span class="p">(</span><span class="n">null</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>                                    
+    <span class="n">ticker</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>   
+
+<span class="k">class</span> <span class="nc">Owner</span><span class="p">(</span><span class="n">Entity</span><span class="p">):</span>                                                            
+    <span class="n">isdirector</span> <span class="o">=</span> <span class="n">PositiveSmallIntegerField</span><span class="p">()</span>                                    
+    <span class="n">isofficer</span> <span class="o">=</span> <span class="n">PositiveSmallIntegerField</span><span class="p">()</span>                                     
+    <span class="n">officertitle</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>   
+
+<span class="k">class</span> <span class="nc">NonDerivative</span><span class="p">(</span><span class="n">Transaction</span><span class="p">):</span>                                               
+    <span class="n">security</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>                                        
+    <span class="n">owner_istenpercentowner</span> <span class="o">=</span> <span class="n">PositiveSmallIntegerField</span><span class="p">()</span>                       
+    <span class="n">owner_sharesownedfollowingtransaction</span> <span class="o">=</span> <span class="n">IntegerField</span><span class="p">()</span>                      
+                                                                                
+    <span class="n">code</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>                                              
+    <span class="n">formtype</span> <span class="o">=</span> <span class="n">PositiveSmallIntegerField</span><span class="p">()</span>                                      
+    <span class="n">isequityswap</span> <span class="o">=</span> <span class="n">PositiveSmallIntegerField</span><span class="p">()</span>                                  
+    <span class="n">shares</span> <span class="o">=</span> <span class="n">IntegerField</span><span class="p">()</span>                                                     
+                                                                                
+    <span class="c"># D = Direct purchase, I = Indirect purchase.                               </span>
+    <span class="n">ownershipnature</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>                                   
+                                                                                
+    <span class="c"># TODO: Create logic to extract price per share from text.                  </span>
+    <span class="c"># pricepershare = DecimalField(max_digits=10, decimal_places=2)             </span>
+    <span class="n">pricepershare</span> <span class="o">=</span> <span class="n">TextField</span><span class="p">()</span>                                                 
+                                                                                
+    <span class="c"># A = Owner acquires new shares, D = Owner disposes of shares.              </span>
+    <span class="n">acqdisp_code</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> </code></pre></figure>
+
+<h3 id="publishing-the-data-for-the-frontend">Publishing the data for the frontend</h3>
+<p>Now that we have a way to store data and a means send a push notification to the frontend client the last bit of backend work is to transform the data so it can be consumed by the React application.  In Django channels there is a concept of consumers that are analogous to views in core Django.  The application we’re building only requires two routes to handle:</p>
+<ol>
+  <li>A new client connection and</li>
+  <li>When there is a new message detected by polling the SEC feed.</li>
+</ol>
+
+<p><a href="https://github.com">sec_api.sec_filings.routing</a></p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="n">channel_routing</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">route</span><span class="p">(</span><span class="s">'websocket.connect'</span><span class="p">,</span> <span class="n">consumers</span><span class="o">.</span><span class="n">ws_connect</span><span class="p">),</span>
+    <span class="n">route</span><span class="p">(</span><span class="s">'websocket.new_message'</span><span class="p">,</span> <span class="n">consumers</span><span class="o">.</span><span class="n">ws_message</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="s">r'^/feed/$'</span><span class="p">),</span>
+<span class="p">]</span>  </code></pre></figure>
+
+<p>In this case when a “new filing” is detected <code class="highlighter-rouge">ws_message()</code> is called and it retrives the new data that has been loaded into our database and broadcasts the data to all listeners.  In this case everyone who visits the frontend is assigned to the same group by <code class="highlighter-rouge">ws_connect()</code>.  When a client disconnects the channel or user is dropped from the group.</p>
+
+<p><a href="https://github.com">sec_api.sec_filings.consumers</a></p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="k">def</span> <span class="nf">broadcast_message</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">group</span><span class="p">):</span>
+    <span class="s">"""Broadcasts the contents of a response object to the specified group."""</span>  
+    <span class="n">message_content</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">),</span> <span class="n">path</span><span class="o">=</span><span class="s">r'/feed/'</span><span class="p">)</span>
+    <span class="n">Group</span><span class="p">(</span><span class="n">constants</span><span class="o">.</span><span class="n">SEC_GROUP</span><span class="p">)</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">message_content</span><span class="p">)))</span>
+
+
+<span class="k">def</span> <span class="nf">ws_connect</span><span class="p">(</span><span class="n">message</span><span class="p">):</span>
+    <span class="s">"""Connect a client to the open websocket and send data on connect."""</span>
+    <span class="n">Group</span><span class="p">(</span><span class="n">constants</span><span class="o">.</span><span class="n">SEC_GROUP</span><span class="p">)</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">reply_channel</span><span class="p">)</span>
+    <span class="n">ws_message</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+ 
+<span class="k">def</span> <span class="nf">ws_message</span><span class="p">(</span><span class="n">message</span><span class="p">):</span>
+    <span class="s">"""Publishes data into the websocket for consumption from the frontend.
+    When new data is available in the SEC rss feed this function is triggered.  
+    All clients that have subscribed to the sec group will receive the new data.
+    """</span>
+
+    <span class="n">response</span> <span class="o">=</span> <span class="n">views</span><span class="o">.</span><span class="n">get_feed</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">())</span>
+    <span class="n">broadcast_message</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">constants</span><span class="o">.</span><span class="n">SEC_GROUP</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">ws_disconnect</span><span class="p">(</span><span class="n">message</span><span class="p">):</span>
+    <span class="s">"""Disconnect a listener from the group."""</span>
+    <span class="n">Group</span><span class="p">(</span><span class="n">constants</span><span class="o">.</span><span class="n">SEC_GROUP</span><span class="p">)</span><span class="o">.</span><span class="n">discard</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">reply_channel</span><span class="p">)</span></code></pre></figure>
+
+<h4 id="starting-the-application">Starting the application</h4>
+<p><strong>Message Broker</strong></p>
+
+<p>Message brokers can be used to setup a queue/worker/consumer workstream, and is used by Celery as well as Django Channels.  Owing to the workstream the processes that use this paradigm are scalable because more workers can be added to consume from a queue if it gets backlogged. 
+First you’ll want to setup a Redis or RabbitMQ server.  They’re both popular message brokers. While I haven’t tested the performance between Redis vs. RabbitMQ it makes sense that Redis is faster since Redis is an in-memory key/value store without additional features that RabbitMQ comes with (including security and different types of ways to broker messages).  Nonenthless both are quite easy to setup – <a href="https://redis.io/download">Redis Install</a> <a href="https://github.com/MicrosoftArchive/redis">Redis Windows Install</a>.</p>
+
+<p><strong>SQL Database</strong></p>
+
+<p>In this tutorial I’ll be using the PostgreSQL database, but other SQL flavors can be used.  For simple SQL queries I’d recommend using the <a href="https://dbeaver.jkiss.org/">DBeaver</a> GUI.  DBeaver is an open source IDE that can plug into different SQL datbases including MySQL, PostgreSQL, Microsfot’s tSQL as well as other non-SQL data stores such as Mongo and the animal pack in Hadoop.  Each database has it’s own editor that is specialized to work in the ecosystem, i.e. SQL workbench for MySQL, Microsoft SQL Server Studio for tSQL, and SAP HANA IDE for SAP HANA and os on.  It’s often easier to use a single editor that can connect to all these data stores to run quries and explore the individual databases.  Launching PostgreSQL is fairly straightforward – you can also skip this as well.</p>
+
+<p>Create a database where our models will be storred.</p>
+
+<figure class="highlight"><pre><code class="language-mysql" data-lang="mysql">CREATE DATABASE SEC_FILING;</code></pre></figure>
+
+<p>Next is to set environment variables.  This can be done in a variety of ways, but to keep things succinct for now we can simple export the following variables – this will be important when the workers are launched because they’ll need to talk the backend databases.</p>
+
+<figure class="highlight"><pre><code class="language-bash" data-lang="bash"><span class="nb">export </span><span class="nv">MYSQL_DATABASE</span><span class="o">=</span>SEC_FILING
+<span class="nb">export </span><span class="nv">MYSQL_HOST</span><span class="o">=</span>localhost or whereever you<span class="s1">'re hosting the SQL db.
+export MYSQL_USER=&lt;user&gt;
+export MYSQL_PASSWORD=&lt;password&gt;</span></code></pre></figure>
+
+<p>At this point we can setup the tables using migration.  Simply execute <code class="highlighter-rouge">python manage.py migrate</code> from the sec_api directory.  I’ve already included the data model so executing the command will automatically create the tables for you.</p>
+
+<p>There are three parts to the backend:</p>
+<ol>
+  <li>server: Django channels provides the urls and routes to the views and consumers.  Jobs are queued through the urls and workers conume from the queue.  First ensure the Redis server is running, and if not then run <code class="highlighter-rouge">src/redis-server</code> from where the redis application is installed. Also ensure these two enironment variables are set <code class="highlighter-rouge">export DJANGO_KEY=&lt;secret_key&gt; &amp;&amp; export LOCAL=1</code>  Launch this from the root of sec_api by running <code class="highlighter-rouge">daphne sec_api.asgi:channel_layer</code>.</li>
+  <li>worker: Worker that will consume work from the APIs (views.py and consumers.py).  Much like celery one can launch multiple workers hence making this particularly scallable. Start a worker by running <code class="highlighter-rouge">python manage.py runworker</code> from the root of the sec_api application.  Remember to set your SQL credentials as environment variables so the worker can talk to the database.</li>
+  <li>poll/feed: the poller and parser submits work to the server.  To start polling the sec feed run <code class="highlighter-rouge">python -m feeds.sec</code> from the root of the sec_data package.</li>
+</ol>
+
+<p><a href="https://github.com">sec_api/sec_api/asgi.py</a></p>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">channels.asgi</span>
+
+<span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">"DJANGO_SETTINGS_MODULE"</span><span class="p">,</span> <span class="s">"sec_api.settings"</span><span class="p">)</span>
+<span class="n">channel_layer</span> <span class="o">=</span> <span class="n">channels</span><span class="o">.</span><span class="n">asgi</span><span class="o">.</span><span class="n">get_channel_layer</span><span class="p">()</span></code></pre></figure>
+
+<h3 id="frontend">Frontend</h3>
+<p>The Facebook team has made it rediculously easy to start a React application with their <a href="https://github.com/facebookincubator/create-react-app">create-react-app</a> package. In order to</p>
+
+<p><a href="https://github.com">sec_frontend.index.js</a></p>
+
+<figure class="highlight"><pre><code class="language-javascript" data-lang="javascript"><span class="kr">import</span> <span class="nx">React</span> <span class="nx">from</span> <span class="s1">'react'</span><span class="p">;</span>
+<span class="kr">import</span> <span class="nx">ReactDOM</span> <span class="nx">from</span> <span class="s1">'react-dom'</span><span class="p">;</span>
+<span class="kr">import</span> <span class="s1">'./index.css'</span><span class="p">;</span>
+<span class="kr">import</span> <span class="nx">registerServiceWorker</span> <span class="nx">from</span> <span class="s1">'./registerServiceWorker.js'</span><span class="p">;</span>
+<span class="kr">import</span> <span class="nx">Filing</span> <span class="nx">from</span> <span class="s1">'./components/Filing.js'</span><span class="p">;</span>
+<span class="kr">import</span> <span class="p">{</span> <span class="nx">getSocketUrl</span> <span class="p">}</span> <span class="nx">from</span> <span class="s1">'./utils.js'</span>
+<span class="kr">const</span> <span class="nx">socket</span> <span class="o">=</span> <span class="nx">getSocketUrl</span><span class="p">();</span>
+
+<span class="c1">// Render the components, picking up where react left off on the server</span>
+<span class="kr">const</span> <span class="nx">element</span> <span class="o">=</span> <span class="o">&lt;</span><span class="nx">Filing</span> <span class="nx">socket</span><span class="o">=</span><span class="p">{</span><span class="nx">socket</span><span class="p">}</span><span class="sr">/&gt;</span><span class="err">;
+</span><span class="nx">ReactDOM</span><span class="p">.</span><span class="nx">render</span><span class="p">(</span><span class="nx">element</span><span class="p">,</span> <span class="nb">document</span><span class="p">.</span><span class="nx">getElementById</span><span class="p">(</span><span class="s1">'root'</span><span class="p">));</span>
+<span class="nx">registerServiceWorker</span><span class="p">();</span></code></pre></figure>
+
+<h4 id="components">Components</h4>
+<p>There are three components that were contructed for the application, each to represent simple concepts:</p>
+<ol>
+  <li>Filing: This represents a single sec filing. This component uses the Transaction and Cards components when it refreshes the browser user interface.  When a new message is received through the WebSocket the component receives the new data that is loaded through Django Channels and refreshes the <code class="highlighter-rouge">this.state</code>.  The <code class="highlighter-rouge">this.state.jsondata</code> receives the json data from the channel and <code class="highlighter-rouge">this.state.divs</code> is an array of cards of the most recent 20 company-owner transaction pairs.  It is <code class="highlighter-rouge">this.state.divs</code> which is rendered.</li>
+  <li>Transaction: Within a filing there are often multiple transactions.  For example, John Doe can participate in a non-derivative transaction such as a direct stock award as well as a derivative transaction such as an award of stock options.</li>
+  <li>Card: These are representations of cards that will show up in the frontend.</li>
+</ol>
+
+<p>FlipMove is a wrapper that conveniently adds animation to animate the addition of cards to the current stack.</p>
+
+<p><a href="https://github.com">sec_frontend.src.components.Filing.js</a></p>
+
+<figure class="highlight"><pre><code class="language-javascript" data-lang="javascript"><table style="border-spacing: 0"><tbody><tr><td class="gutter gl" style="text-align: right"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+59
+60
+61
+62
+63
+64
+65
+66
+67
+68
+69
+70
+71
+72
+73
+74
+75
+76
+77
+78
+79
+80
+81
+82
+83
+84
+85
+86
+87
+88
+89
+90</pre></td><td class="code"><pre><span class="kr">import</span> <span class="nx">React</span><span class="p">,</span> <span class="p">{</span> <span class="nx">Component</span><span class="p">}</span> <span class="nx">from</span> <span class="s1">'react'</span><span class="p">;</span>
+<span class="kr">import</span> <span class="nx">Card</span> <span class="nx">from</span> <span class="s1">'./Card.js'</span>
+<span class="kr">import</span> <span class="nx">FlipMove</span> <span class="nx">from</span> <span class="s1">'react-flip-move'</span><span class="p">;</span>
+
+
+<span class="kr">export</span> <span class="k">default</span> <span class="kr">class</span> <span class="nx">Filing</span> <span class="kr">extends</span> <span class="nx">Component</span>
+<span class="p">{</span>
+
+  <span class="nx">constructor</span><span class="p">(</span><span class="nx">props</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kr">super</span><span class="p">(</span><span class="nx">props</span><span class="p">);</span>
+
+    <span class="k">this</span><span class="p">.</span><span class="nx">state</span> <span class="o">=</span> <span class="p">{</span>
+      <span class="na">jsondata</span><span class="p">:</span> <span class="p">{</span><span class="na">content</span><span class="p">:</span> <span class="p">{</span><span class="na">companies</span><span class="p">:</span> <span class="p">[]}},</span>
+      <span class="na">divs</span><span class="p">:</span> <span class="p">[],</span>
+    <span class="p">};</span>
+
+    <span class="k">this</span><span class="p">.</span><span class="nx">ws</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">WebSocket</span><span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">props</span><span class="p">.</span><span class="nx">socket</span><span class="p">)</span>
+
+    <span class="k">this</span><span class="p">.</span><span class="nx">refresh</span> <span class="o">=</span> <span class="k">this</span><span class="p">.</span><span class="nx">refresh</span><span class="p">.</span><span class="nx">bind</span><span class="p">(</span><span class="k">this</span><span class="p">);</span>
+    <span class="k">this</span><span class="p">.</span><span class="nx">handleData</span> <span class="o">=</span> <span class="k">this</span><span class="p">.</span><span class="nx">handleData</span><span class="p">.</span><span class="nx">bind</span><span class="p">(</span><span class="k">this</span><span class="p">);</span>
+
+  <span class="p">}</span>
+
+
+  <span class="nx">handleData</span><span class="p">(</span><span class="nx">data</span><span class="p">)</span> <span class="p">{</span>
+    <span class="cm">/*
+    Receive messages from the connected socket and update.
+    */</span>
+
+    <span class="kd">let</span> <span class="nx">result</span> <span class="o">=</span> <span class="nx">JSON</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="nx">data</span><span class="p">);</span>
+    <span class="k">this</span><span class="p">.</span><span class="nx">setState</span><span class="p">({</span><span class="na">jsondata</span><span class="p">:</span> <span class="nx">result</span><span class="p">});</span>
+    <span class="k">this</span><span class="p">.</span><span class="nx">refresh</span><span class="p">();</span>
+  <span class="p">}</span>
+
+  
+  <span class="nx">refresh</span><span class="p">()</span> <span class="p">{</span>
+    <span class="cm">/*  
+    Refreshes the state. Create an array with each element representing a card 
+    that contains information on transactions reported to the SEC
+    */</span>
+
+    <span class="kd">let</span> <span class="nx">divs</span> <span class="o">=</span> <span class="p">[];</span>
+    <span class="kd">let</span> <span class="nx">companiesOwners</span> <span class="o">=</span> <span class="k">this</span><span class="p">.</span><span class="nx">state</span><span class="p">.</span><span class="nx">jsondata</span><span class="p">.</span><span class="nx">content</span><span class="p">.</span><span class="nx">companies</span>
+
+    <span class="kd">let</span> <span class="nx">cardNum</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">for</span> <span class="p">(</span><span class="kd">let</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">companiesOwners</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+
+      <span class="kd">let</span> <span class="nx">company</span> <span class="o">=</span> <span class="nb">Object</span><span class="p">.</span><span class="nx">keys</span><span class="p">(</span><span class="nx">companiesOwners</span><span class="p">[</span><span class="nx">i</span><span class="p">]);</span>
+      <span class="kd">let</span> <span class="nx">ownerfiles</span> <span class="o">=</span> <span class="nx">companiesOwners</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="nx">company</span><span class="p">].</span><span class="nx">owners</span>
+
+      <span class="c1">// Create a card for each owner-company pair.</span>
+      <span class="k">for</span> <span class="p">(</span><span class="kd">let</span> <span class="nx">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">j</span> <span class="o">&lt;</span> <span class="nx">ownerfiles</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">j</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+
+        <span class="kd">let</span> <span class="nx">owner</span> <span class="o">=</span> <span class="nb">Object</span><span class="p">.</span><span class="nx">keys</span><span class="p">(</span><span class="nx">ownerfiles</span><span class="p">[</span><span class="nx">j</span><span class="p">])</span>
+        <span class="kd">let</span> <span class="nx">transaction</span> <span class="o">=</span> <span class="nx">ownerfiles</span><span class="p">[</span><span class="nx">j</span><span class="p">][</span><span class="nx">owner</span><span class="p">]</span>
+
+        <span class="nx">cardNum</span> <span class="o">+=</span> <span class="mi">1</span><span class="p">;</span>
+
+        <span class="nx">divs</span><span class="p">.</span><span class="nx">push</span><span class="p">(</span>
+          <span class="o">&lt;</span><span class="nx">div</span> <span class="nx">key</span><span class="o">=</span><span class="p">{</span><span class="nx">cardNum</span><span class="p">}</span><span class="o">&gt;</span>
+          <span class="o">&lt;</span><span class="nx">Card</span> <span class="nx">transaction</span><span class="o">=</span><span class="p">{</span><span class="nx">transaction</span><span class="p">}</span> <span class="nx">owner</span><span class="o">=</span><span class="p">{</span><span class="nx">owner</span><span class="p">}</span> <span class="nx">company</span><span class="o">=</span><span class="p">{</span><span class="nx">company</span><span class="p">}</span> <span class="nx">cardNum</span><span class="o">=</span><span class="p">{</span><span class="nx">cardNum</span><span class="p">}</span> <span class="sr">/</span><span class="err">&gt;
+</span>          <span class="o">&lt;</span><span class="sr">/div</span><span class="err">&gt;
+</span>        <span class="p">)</span>
+      <span class="p">}</span>
+      
+    <span class="p">}</span>
+
+    <span class="c1">// Set the state of the json data and the divs that will be rendered</span>
+    <span class="k">this</span><span class="p">.</span><span class="nx">setState</span><span class="p">({</span><span class="na">divs</span><span class="p">:</span> <span class="nx">divs</span><span class="p">});</span>
+
+  <span class="p">};</span>
+
+
+  <span class="nx">componentWillUnmount</span><span class="p">()</span> <span class="p">{</span>
+    <span class="k">this</span><span class="p">.</span><span class="nx">ws</span><span class="p">.</span><span class="nx">close</span><span class="p">()</span>
+  <span class="p">};</span>
+
+
+  <span class="nx">render</span><span class="p">()</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="p">(</span>
+      <span class="o">&lt;</span><span class="nx">div</span><span class="o">&gt;</span>
+        <span class="o">&lt;</span><span class="nx">FlipMove</span> <span class="nx">staggerDurationBy</span><span class="o">=</span><span class="s2">"30"</span> <span class="nx">duration</span><span class="o">=</span><span class="p">{</span><span class="mi">600</span><span class="p">}</span><span class="o">&gt;</span>
+            <span class="p">{</span><span class="k">this</span><span class="p">.</span><span class="nx">state</span><span class="p">.</span><span class="nx">divs</span><span class="p">}</span>
+        <span class="o">&lt;</span><span class="sr">/FlipMove</span><span class="err">&gt;
+</span>      <span class="o">&lt;</span><span class="sr">/div</span><span class="err">&gt;
+</span>    <span class="p">);</span>
+  <span class="p">}</span>
+
+<span class="p">};</span><span class="w">
+</span></pre></td></tr></tbody></table></code></pre></figure>
+
+<h4 id="starting-the-frontend">Starting the frontend</h4>
+<p>Now all we have left is to start the React application using <code class="highlighter-rouge">npm start</code>.  Of note is this snippet in the package.json.  The npm start command starts a node server, while running <code class="highlighter-rouge">npm run start:local</code> or <code class="highlighter-rouge">npm run start:production</code> will make the server aware of the enironment by setting the REACT_APP_NODE_ENV global constant.</p>
+
+<p><a href="https://github.com">sec_frontend/package.json</a></p>
+
+<figure class="highlight"><pre><code class="language-javascript" data-lang="javascript"><span class="p">...</span>
+    <span class="s2">"start"</span><span class="err">:</span> <span class="s2">"react-scripts start 127.0.0.1:3000"</span><span class="p">,</span>
+    <span class="s2">"start:local"</span><span class="err">:</span> <span class="s2">"SET \"REACT_APP_NODE_ENV=local\" &amp;&amp; npm start"</span><span class="p">,</span>
+    <span class="s2">"start:production"</span><span class="err">:</span> <span class="s2">"SET \"REACT_APP_NODE_ENV=production\" &amp;&amp; npm start"</span><span class="p">,</span>
+<span class="p">...</span></code></pre></figure>
+
+<p>In index.js you’ll notice that we define the socket to connect to in line <code class="highlighter-rouge">const socket = getSocketUrl()</code>.  It is this function that enables us to distinguish between a production and local WebSocket endpoint.  If we set the REACT_APP_NODE_ENV constant to “local” then the application will have each client connect to 127.0.0.1:8000/feed/ while if it were set to production then it’ll point at another endpoint, in this case eldoradoapi.herokuapp.com/feed/.</p>
+
+<p><a href="https://github.com">sec_frontend/src/utils.js</a></p>
+
+<figure class="highlight"><pre><code class="language-javascript" data-lang="javascript"><span class="kr">export</span> <span class="kd">function</span> <span class="nx">getSocketUrl</span><span class="p">()</span> <span class="p">{</span>
+  <span class="k">if</span> <span class="p">(</span><span class="nx">process</span><span class="p">.</span><span class="nx">env</span><span class="p">.</span><span class="nx">REACT_APP_NODE_ENV</span> <span class="o">===</span> <span class="s1">'local'</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="p">(</span><span class="s1">'ws://127.0.0.1:8000/feed/'</span><span class="p">);</span>
+  <span class="p">}</span> <span class="k">else</span> <span class="k">if</span> <span class="p">(</span><span class="nx">process</span><span class="p">.</span><span class="nx">env</span><span class="p">.</span><span class="nx">REACT_APP_NODE_ENV</span> <span class="o">===</span> <span class="s1">'production'</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="p">(</span><span class="s1">'wss://eldoradoapi.herokuapp.com/feed/'</span><span class="p">);</span>
+  <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="s1">'Error: No feed detected.'</span>
+  <span class="p">}</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>Now, when there is new data that is made available in the sec RSS feed you should see that same data populate as cards.  Have fun with this, and incorporate it with other data.  Perhaps, you’ll be able to leverage other data points along with insider confidence in the stock to make a little extra money :).  However, this might not be the case as Wall Street is likely doing something more sophisticated – as well as <a href="https://www.sec.gov/news/public-statement/statement-clayton-2017-09-20">hackers</a> alike.</p>
+
+
+  </div>
+
+  
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">My blog</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li>
+            
+        </ul>
+      </div>
+
+      <div class="footer-col footer-col-2">
+        <ul class="social-media-list">
+          
+          <li>
+            <a href="https://github.com/EricChea"><span class="icon icon--github"><svg viewBox="0 0 16 16" width="16px" height="16px"><path fill="#828282" d="M7.999,0.431c-4.285,0-7.76,3.474-7.76,7.761 c0,3.428,2.223,6.337,5.307,7.363c0.388,0.071,0.53-0.168,0.53-0.374c0-0.184-0.007-0.672-0.01-1.32 c-2.159,0.469-2.614-1.04-2.614-1.04c-0.353-0.896-0.862-1.135-0.862-1.135c-0.705-0.481,0.053-0.472,0.053-0.472 c0.779,0.055,1.189,0.8,1.189,0.8c0.692,1.186,1.816,0.843,2.258,0.645c0.071-0.502,0.271-0.843,0.493-1.037 C4.86,11.425,3.049,10.76,3.049,7.786c0-0.847,0.302-1.54,0.799-2.082C3.768,5.507,3.501,4.718,3.924,3.65 c0,0,0.652-0.209,2.134,0.796C6.677,4.273,7.34,4.187,8,4.184c0.659,0.003,1.323,0.089,1.943,0.261 c1.482-1.004,2.132-0.796,2.132-0.796c0.423,1.068,0.157,1.857,0.077,2.054c0.497,0.542,0.798,1.235,0.798,2.082 c0,2.981-1.814,3.637-3.543,3.829c0.279,0.24,0.527,0.713,0.527,1.437c0,1.037-0.01,1.874-0.01,2.129 c0,0.208,0.14,0.449,0.534,0.373c3.081-1.028,5.302-3.935,5.302-7.362C15.76,3.906,12.285,0.431,7.999,0.431z"/></svg>
+</span><span class="username">EricChea</span></a>
+
+          </li>
+          
+
+          
+          <li>
+            <a href="https://twitter.com/EricChea"><span class="icon icon--twitter"><svg viewBox="0 0 16 16" width="16px" height="16px"><path fill="#828282" d="M15.969,3.058c-0.586,0.26-1.217,0.436-1.878,0.515c0.675-0.405,1.194-1.045,1.438-1.809c-0.632,0.375-1.332,0.647-2.076,0.793c-0.596-0.636-1.446-1.033-2.387-1.033c-1.806,0-3.27,1.464-3.27,3.27 c0,0.256,0.029,0.506,0.085,0.745C5.163,5.404,2.753,4.102,1.14,2.124C0.859,2.607,0.698,3.168,0.698,3.767 c0,1.134,0.577,2.135,1.455,2.722C1.616,6.472,1.112,6.325,0.671,6.08c0,0.014,0,0.027,0,0.041c0,1.584,1.127,2.906,2.623,3.206 C3.02,9.402,2.731,9.442,2.433,9.442c-0.211,0-0.416-0.021-0.615-0.059c0.416,1.299,1.624,2.245,3.055,2.271 c-1.119,0.877-2.529,1.4-4.061,1.4c-0.264,0-0.524-0.015-0.78-0.046c1.447,0.928,3.166,1.469,5.013,1.469 c6.015,0,9.304-4.983,9.304-9.304c0-0.142-0.003-0.283-0.009-0.423C14.976,4.29,15.531,3.714,15.969,3.058z"/></svg>
+</span><span class="username">EricChea</span></a>
+
+          </li>
+          
+        </ul>
+      </div>
+
+      <div class="footer-col footer-col-3">
+        <p>Things I find interesting.</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>
