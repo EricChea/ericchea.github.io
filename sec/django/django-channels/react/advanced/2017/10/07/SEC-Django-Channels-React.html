@@ -17,7 +17,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <title>Tutorial: Using Django Channels to visualize RSS Feeds with React</title>
-  <meta name="description" content="">
+  <meta name="description" content="Number of words: 3078 17 minutes to read Introduction This post is for those who are interested in using Django Channels. Django Channels will be used in thi...">
 
   <link rel="stylesheet" href="/assets/main.css">
   <link rel="canonical" href="/sec/django/django-channels/react/advanced/2017/10/07/SEC-Django-Channels-React.html">
@@ -92,25 +92,24 @@
   <div class="post-content" itemprop="articleBody">
     
 <p>Number of words: 
-    3144</p>
+    3078</p>
 
 <p>17 minutes to read</p>
 
 <h2 id="introduction">Introduction</h2>
 
-<p>This post is for those who are interested in using Django Channels and want an example to template off of.  Django Channels will be used in this application as a way to push data to the frontend from an RSS feed only when there is new data avaialble as opposed to having the frontend application poll the RSS feed for new content. To get the most out of this application you’ll need some basic understanding of the following:</p>
+<p>This post is for those who are interested in using Django Channels.  Django Channels will be used in this application as a way to push data to the frontend from an RSS feed only when there is new data available as opposed to having the frontend application poll the RSS feed for new content. To get the most out of this application, you’ll need some basic understanding of the following:</p>
 
 <ul>
-  <li><strong>Django</strong>: Having an understanding of how to build an API using Django views.</li>
-  <li><strong>React</strong>: Having an understanding of how to build and serve up a static page using React.</li>
-  <li><strong>WebSockets</strong>: The advantages of using WebSockets over polling a server for changes.</li>
-  <li><strong>ETL</strong>: Some basic principles in extracting xml data.  In this post we’ll be using the python xml package.</li>
+  <li><strong>Django</strong>: building an API using Django views.</li>
+  <li><strong>React</strong>: building and serving up a static page using React.</li>
+  <li><strong>ETL</strong>: extracting XML data.  In this post, we’ll be using the BeautifulSoup and feedparser Python packages.</li>
 </ul>
 
 <h1 id="background">Background</h1>
-<p>Django is used by many large organizations/applications including NASA, YouTube, Mozilla, and Pinterest.  As a web framework it is very attractive because of the size of the vibrant community, it is written in python (clean code), it is secure, it has a built-in backend admin interface that can be quickly built, and it is very intuitive.  It has changed since it launched over ten years ago, one quite notable change being its ability to talk to multiple databases, a capability that was not available early on.  Building a REST API is as simple as creating a view and updating a path for the URL.  However, Django did fall behind – for instance it’s incompatibilities with newer technologies such as WebSockets.  WebSockets enabled the ability for a server to actively push data to the client instead of requiring the client to poll the server for changes, dramatically freeing up bandwidth.  It is this technology that has enabled the smooth communication in chat rooms and instant messages through these persistent long-lived connections.</p>
+<p>Django is a very attractive web framework because of the size of the vibrant community, it’s written in python (clean code), it’s secure, and it has a built-in backend admin interface.  It has changed since it launched over ten years ago, one quite notable change is its ability to talk to multiple databases, a capability that was not available early on.  Building a REST API is as simple as creating a view and updating a path for the URL.  However, Django did fall behind – for instance it’s incompatibilities with newer technologies such as WebSockets.  WebSockets enabled the ability for a server to actively push data to the client instead of requiring the client to poll the server for changes, dramatically freeing up bandwidth.  It is this technology that has enabled the smooth communication in chat rooms and instant messages through these persistent, long-lived connections.</p>
 
-<p><a href="http://www.celeryproject.org/">Celery</a> is an asynchronous task queue/job queue on distributed message passing.  It leverages the brokering capabilities of the likes of RabbitMQ and Redis and python scripts that can be easily decorated with functions from the Celery package to submit jobs.  Like Redis and Rabbit there can be multiple workers listening to the queue for new jobs to consume.</p>
+<p><a href="http://www.celeryproject.org/">Celery</a> is an asynchronous task queue/job queue on distributed message passing. It leverages the brokering capabilities of the likes of RabbitMQ and Redis and provides function decorators to simplify the form of Python scripts. Like Redis and Rabbit, there can be multiple workers listening to the queue for new jobs to consume.</p>
 
 <p>Collectively, integration of WebSockets with some flavoring of Celery (no pun intended) became available with Andrew Goodkind’s spearheading of the <a href="https://channels.readthedocs.io/en/stable/">Django Channels</a> package.  Jacob Kaplan-Moss has a great post on creating a <a href="https://blog.heroku.com/in_deep_with_django_channels_the_future_of_real_time_apps_in_django">chat room with Django channels</a>.</p>
 
@@ -216,7 +215,8 @@ Activate environment on Windows OS
     <span class="o">...</span> 
     <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rss_url</span><span class="p">):</span>                                                
                                                                       
-        <span class="c"># Used for easy reference during a refresh of the rss contents.         </span>
+        <span class="c"># Used for easy reference during a refresh of the rss contents.         
+</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">rss_url</span> <span class="o">=</span> <span class="n">rss_url</span>                                                  
         <span class="bp">self</span><span class="o">.</span><span class="n">feed</span> <span class="o">=</span> <span class="n">feedparser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">url_file_stream_or_string</span><span class="o">=</span><span class="n">rss_url</span><span class="p">)</span>         
         <span class="n">verify_feed_status</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">feed</span><span class="p">)</span>                                           
@@ -225,13 +225,20 @@ Activate environment on Windows OS
 
 
     <span class="k">def</span> <span class="nf">__is_process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">form_type</span><span class="p">,</span> <span class="n">accession_num</span><span class="p">):</span>                           
-        <span class="c"># The rss feed gives at least two records per form 4 -- one for the     </span>
-        <span class="c"># issuer and one that is reporting (receiver) the transaction.          </span>
-        <span class="c"># The function removes duplicates by the accession number.              </span>
-        <span class="c"># Store entry data in a dictionary for better malleability              </span>
-        <span class="c"># We are not supporting other filing types except insiders for now      </span>
-        <span class="c"># If the accession number is already stored there is no need to         </span>
-        <span class="c"># run a job to load it again.                                           </span>
+        <span class="c"># The rss feed gives at least two records per form 4 -- one for the     
+</span>
+        <span class="c"># issuer and one that is reporting (receiver) the transaction.          
+</span>
+        <span class="c"># The function removes duplicates by the accession number.              
+</span>
+        <span class="c"># Store entry data in a dictionary for better malleability              
+</span>
+        <span class="c"># We are not supporting other filing types except insiders for now      
+</span>
+        <span class="c"># If the accession number is already stored there is no need to         
+</span>
+        <span class="c"># run a job to load it again.                                           
+</span>
         <span class="k">if</span> <span class="n">form_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">SUPPORTED_FORMS</span> <span class="ow">or</span> <span class="n">accession_num</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">accession_bank</span>  <span class="p">:</span>
             <span class="k">return</span> <span class="bp">False</span>                                                        
         <span class="k">else</span><span class="p">:</span>                                                                   
@@ -329,14 +336,18 @@ Activate environment on Windows OS
     <span class="n">isequityswap</span> <span class="o">=</span> <span class="n">PositiveSmallIntegerField</span><span class="p">()</span>                                  
     <span class="n">shares</span> <span class="o">=</span> <span class="n">IntegerField</span><span class="p">()</span>                                                     
                                                                                 
-    <span class="c"># D = Direct purchase, I = Indirect purchase.                               </span>
+    <span class="c"># D = Direct purchase, I = Indirect purchase.                               
+</span>
     <span class="n">ownershipnature</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>                                   
                                                                                 
-    <span class="c"># TODO: Create logic to extract price per share from text.                  </span>
-    <span class="c"># pricepershare = DecimalField(max_digits=10, decimal_places=2)             </span>
+    <span class="c"># TODO: Create logic to extract price per share from text.                  
+</span>
+    <span class="c"># pricepershare = DecimalField(max_digits=10, decimal_places=2)             
+</span>
     <span class="n">pricepershare</span> <span class="o">=</span> <span class="n">TextField</span><span class="p">()</span>                                                 
                                                                                 
-    <span class="c"># A = Owner acquires new shares, D = Owner disposes of shares.              </span>
+    <span class="c"># A = Owner acquires new shares, D = Owner disposes of shares.              
+</span>
     <span class="n">acqdisp_code</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> </code></pre></figure>
 
 <h3 id="publishing-the-data-for-the-frontend">Publishing the data for the frontend</h3>
@@ -434,8 +445,9 @@ export MYSQL_PASSWORD=&lt;password&gt;</span></code></pre></figure>
 <span class="kr">import</span> <span class="p">{</span> <span class="nx">getSocketUrl</span> <span class="p">}</span> <span class="nx">from</span> <span class="s1">'./utils.js'</span>
 <span class="kr">const</span> <span class="nx">socket</span> <span class="o">=</span> <span class="nx">getSocketUrl</span><span class="p">();</span>
 
-<span class="c1">// Render the components, picking up where react left off on the server</span>
-<span class="kr">const</span> <span class="nx">element</span> <span class="o">=</span> <span class="o">&lt;</span><span class="nx">Filing</span> <span class="nx">socket</span><span class="o">=</span><span class="p">{</span><span class="nx">socket</span><span class="p">}</span><span class="sr">/&gt;</span><span class="err">;
+<span class="c1">// Render the components, picking up where react left off on the server
+</span>
+<span class="kr">const</span> <span class="nx">element</span> <span class="o">=</span> <span class="o">&lt;</span><span class="nx">Filing</span> <span class="nx">socket</span><span class="o">=</span><span class="p">{</span><span class="nx">socket</span><span class="p">}</span><span class="sr">/&gt;;</span><span class="err">
 </span><span class="nx">ReactDOM</span><span class="p">.</span><span class="nx">render</span><span class="p">(</span><span class="nx">element</span><span class="p">,</span> <span class="nb">document</span><span class="p">.</span><span class="nx">getElementById</span><span class="p">(</span><span class="s1">'root'</span><span class="p">));</span>
 <span class="nx">registerServiceWorker</span><span class="p">();</span></code></pre></figure>
 
@@ -591,7 +603,8 @@ export MYSQL_PASSWORD=&lt;password&gt;</span></code></pre></figure>
       <span class="kd">let</span> <span class="nx">company</span> <span class="o">=</span> <span class="nb">Object</span><span class="p">.</span><span class="nx">keys</span><span class="p">(</span><span class="nx">companiesOwners</span><span class="p">[</span><span class="nx">i</span><span class="p">]);</span>
       <span class="kd">let</span> <span class="nx">ownerfiles</span> <span class="o">=</span> <span class="nx">companiesOwners</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="nx">company</span><span class="p">].</span><span class="nx">owners</span>
 
-      <span class="c1">// Create a card for each owner-company pair.</span>
+      <span class="c1">// Create a card for each owner-company pair.
+</span>
       <span class="k">for</span> <span class="p">(</span><span class="kd">let</span> <span class="nx">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">j</span> <span class="o">&lt;</span> <span class="nx">ownerfiles</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">j</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
 
         <span class="kd">let</span> <span class="nx">owner</span> <span class="o">=</span> <span class="nb">Object</span><span class="p">.</span><span class="nx">keys</span><span class="p">(</span><span class="nx">ownerfiles</span><span class="p">[</span><span class="nx">j</span><span class="p">])</span>
@@ -601,14 +614,15 @@ export MYSQL_PASSWORD=&lt;password&gt;</span></code></pre></figure>
 
         <span class="nx">divs</span><span class="p">.</span><span class="nx">push</span><span class="p">(</span>
           <span class="o">&lt;</span><span class="nx">div</span> <span class="nx">key</span><span class="o">=</span><span class="p">{</span><span class="nx">cardNum</span><span class="p">}</span><span class="o">&gt;</span>
-          <span class="o">&lt;</span><span class="nx">Card</span> <span class="nx">transaction</span><span class="o">=</span><span class="p">{</span><span class="nx">transaction</span><span class="p">}</span> <span class="nx">owner</span><span class="o">=</span><span class="p">{</span><span class="nx">owner</span><span class="p">}</span> <span class="nx">company</span><span class="o">=</span><span class="p">{</span><span class="nx">company</span><span class="p">}</span> <span class="nx">cardNum</span><span class="o">=</span><span class="p">{</span><span class="nx">cardNum</span><span class="p">}</span> <span class="sr">/</span><span class="err">&gt;
-</span>          <span class="o">&lt;</span><span class="sr">/div</span><span class="err">&gt;
+          <span class="o">&lt;</span><span class="nx">Card</span> <span class="nx">transaction</span><span class="o">=</span><span class="p">{</span><span class="nx">transaction</span><span class="p">}</span> <span class="nx">owner</span><span class="o">=</span><span class="p">{</span><span class="nx">owner</span><span class="p">}</span> <span class="nx">company</span><span class="o">=</span><span class="p">{</span><span class="nx">company</span><span class="p">}</span> <span class="nx">cardNum</span><span class="o">=</span><span class="p">{</span><span class="nx">cardNum</span><span class="p">}</span> <span class="sr">/&gt;</span><span class="err">
+</span>          <span class="o">&lt;</span><span class="sr">/div&gt;</span><span class="err">
 </span>        <span class="p">)</span>
       <span class="p">}</span>
       
     <span class="p">}</span>
 
-    <span class="c1">// Set the state of the json data and the divs that will be rendered</span>
+    <span class="c1">// Set the state of the json data and the divs that will be rendered
+</span>
     <span class="k">this</span><span class="p">.</span><span class="nx">setState</span><span class="p">({</span><span class="na">divs</span><span class="p">:</span> <span class="nx">divs</span><span class="p">});</span>
 
   <span class="p">};</span>
@@ -624,8 +638,8 @@ export MYSQL_PASSWORD=&lt;password&gt;</span></code></pre></figure>
       <span class="o">&lt;</span><span class="nx">div</span><span class="o">&gt;</span>
         <span class="o">&lt;</span><span class="nx">FlipMove</span> <span class="nx">staggerDurationBy</span><span class="o">=</span><span class="s2">"30"</span> <span class="nx">duration</span><span class="o">=</span><span class="p">{</span><span class="mi">600</span><span class="p">}</span><span class="o">&gt;</span>
             <span class="p">{</span><span class="k">this</span><span class="p">.</span><span class="nx">state</span><span class="p">.</span><span class="nx">divs</span><span class="p">}</span>
-        <span class="o">&lt;</span><span class="sr">/FlipMove</span><span class="err">&gt;
-</span>      <span class="o">&lt;</span><span class="sr">/div</span><span class="err">&gt;
+        <span class="o">&lt;</span><span class="sr">/FlipMove&gt;</span><span class="err">
+</span>      <span class="o">&lt;</span><span class="sr">/div&gt;</span><span class="err">
 </span>    <span class="p">);</span>
   <span class="p">}</span>
 
