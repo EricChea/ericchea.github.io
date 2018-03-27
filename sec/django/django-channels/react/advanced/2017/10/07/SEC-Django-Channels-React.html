@@ -17,7 +17,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <title>Tutorial: Using Django Channels to visualize RSS Feeds with React</title>
-  <meta name="description" content="Number of words: 3078 17 minutes to read Introduction This post is for those who are interested in using Django Channels. Django Channels will be used in thi...">
+  <meta name="description" content="Number of words: 3071 17 minutes to read Introduction This post is for those who are interested in using Django Channels. Django Channels will be used in thi...">
 
   <link rel="stylesheet" href="/assets/main.css">
   <link rel="canonical" href="/sec/django/django-channels/react/advanced/2017/10/07/SEC-Django-Channels-React.html">
@@ -64,6 +64,11 @@
           
             
             
+            <a class="page-link" href="/resources/">Resources</a>
+            
+          
+            
+            
           
             
             
@@ -92,7 +97,7 @@
   <div class="post-content" itemprop="articleBody">
     
 <p>Number of words: 
-    3078</p>
+    3071</p>
 
 <p>17 minutes to read</p>
 
@@ -114,7 +119,7 @@
 <p>Collectively, integration of WebSockets with some flavoring of Celery (no pun intended) became available with Andrew Goodkind’s spearheading of the <a href="https://channels.readthedocs.io/en/stable/">Django Channels</a> package.  Jacob Kaplan-Moss has a great post on creating a <a href="https://blog.heroku.com/in_deep_with_django_channels_the_future_of_real_time_apps_in_django">chat room with Django channels</a>.</p>
 
 <h1 id="architecture">Architecture</h1>
-<p>In this post I wanted to create something a little different, and that is to adapt Django Channels to read from an RSS feed for live data, essentially giving the RSS feed a seat in a chat room and the ability to notify everyone listening when new data is available.  Unfortunately, in order to know when an  RSS feed broadcasts new data we’ll need to poll the RSS feed for new data every few seconds.  When there are new filings the data will get parsed, stored in a database, and broadcasted to clients listening on the WebSocket.  In turn the React application will receive the fresh data whenever a new message is posted to the WebSocket.</p>
+<p>In this post, I wanted to create something a little different, and that is to adapt Django Channels to read from an RSS feed for live data, essentially giving the RSS feed a seat in a chat room and the ability to notify everyone listening when new data is available.  Unfortunately, to know when an  RSS feed broadcasts new data, we’ll need to poll the RSS feed for new data every few seconds.  When there are new filings the data will get parsed, stored in a database, and broadcasted to clients listening on the WebSocket.  In turn, the React application will receive the fresh data as it becomes available.</p>
 
 <script src="https://unpkg.com/mermaid@7.1.0/dist/mermaid.min.js"></script>
 <div class="mermaid">
